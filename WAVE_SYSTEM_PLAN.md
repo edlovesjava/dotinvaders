@@ -97,6 +97,113 @@ New total: ~102 bytes (20% of 512)
 
 ---
 
+## Design Decisions
+
+| Question | Decision |
+|----------|----------|
+| Max invaders | **4** (constant `MAX_INVADERS`) |
+| Wave advance effect | **Yes** - flash effect on level up |
+| Lives system | **Yes** - 1-3 lives (configurable) |
+| Score multiplier | **Yes** - increases with wave level |
+| New wave spawn | **Gradual** - via spawnInterval, not sudden burst |
+| Endgame | **Loop final wave** with max difficulty |
+
+---
+
+## New Features
+
+### Lives System
+
+```cpp
+#define STARTING_LIVES 3
+#define MAX_LIVES 3
+
+uint8_t lives = STARTING_LIVES;  // 1 byte SRAM
+
+void loseLife() {
+  lives--;
+  if (lives == 0) {
+    gameOver();
+  } else {
+    // Flash remaining lives, clear invaders, brief pause
+    showLivesRemaining();
+    clearAllInvaders();
+    delay(1000);
+  }
+}
+```
+
+**Display lives:** Flash pattern at game start, or use corner LEDs.
+
+### Score Multiplier
+
+```cpp
+// Add to WaveConfig or calculate from wave number
+uint8_t scoreMultiplier = 1;  // 1 byte SRAM
+
+// On hit:
+score += scoreMultiplier;  // Instead of score++
+
+// On wave advance:
+scoreMultiplier = currentWave + 1;  // Wave 1 = 1x, Wave 2 = 2x, etc.
+```
+
+**Alternative:** Store multiplier in wave config table for fine control.
+
+### Wave Advance Flash Effect
+
+```cpp
+void advanceWave() {
+  currentWave++;
+  waveKills = 0;
+
+  // Flash effect - quick strobe
+  for (uint8_t i = 0; i < 3; i++) {
+    for (uint8_t row = 0; row < 8; row++) {
+      sendCmd(row + 1, 0xFF);
+    }
+    delay(50);
+    for (uint8_t row = 0; row < 8; row++) {
+      sendCmd(row + 1, 0x00);
+    }
+    delay(50);
+  }
+
+  // Load new wave config from PROGMEM
+  loadWaveConfig(currentWave);
+}
+```
+
+---
+
+## Updated SRAM Budget
+
+```
+Wave System Variables:
+  invaderCols[4]       4 bytes   Invader X positions
+  invaderRows[4]       4 bytes   Invader Y positions (255=inactive)
+  currentWave          1 byte    Current wave index
+  waveKills            1 byte    Kills in current wave
+  spawnCounter         2 bytes   Spawn timing
+  dropInterval         2 bytes   Current gravity
+  spawnInterval        2 bytes   Current spawn rate
+  lives                1 byte    Remaining lives
+  scoreMultiplier      1 byte    Current score multiplier
+                      ________
+  Subtotal:           18 bytes
+
+Removed:
+  invaderCol          -1 byte
+  invaderRow          -1 byte
+  speed               -1 byte
+                      ________
+  Net change:        +15 bytes
+
+New total: ~101 bytes (20% of 512 SRAM) ✓
+```
+
+---
+
 ## Proposed Architecture
 
 ### Invader Storage
@@ -136,6 +243,7 @@ struct WaveConfig {
   uint16_t dropInterval;      // ms between drops (gravity)
   uint16_t spawnInterval;     // ms between new spawns
   uint8_t killsToAdvance;     // kills needed to reach next wave
+  uint8_t scoreMultiplier;    // points per kill this wave
 };
 ```
 
@@ -143,20 +251,20 @@ struct WaveConfig {
 
 ```cpp
 const WaveConfig waves[] PROGMEM = {
-  // { invaders, dropInterval, spawnInterval, killsToAdvance }
-  { 1, 400, 0,   5 },   // Wave 1: 1 invader, slow, 5 kills
-  { 1, 350, 0,   5 },   // Wave 2: 1 invader, faster
-  { 1, 300, 0,   5 },   // Wave 3: 1 invader, even faster
-  { 2, 300, 500, 5 },   // Wave 4: 2 invaders, spawn every 500ms
-  { 2, 250, 400, 5 },   // Wave 5: 2 invaders, faster
-  { 3, 250, 350, 5 },   // Wave 6: 3 invaders
-  { 3, 200, 300, 5 },   // Wave 7: 3 invaders, fast
-  { 4, 200, 250, 0 },   // Wave 8+: 4 invaders, endgame (loop here)
+  // { invaders, drop, spawn, kills, multiplier }
+  { 1, 400,   0, 5, 1 },   // Wave 1: 1 invader, slow, 1x
+  { 1, 350,   0, 5, 1 },   // Wave 2: 1 invader, faster, 1x
+  { 1, 300,   0, 5, 2 },   // Wave 3: 1 invader, fast, 2x
+  { 2, 300, 600, 5, 2 },   // Wave 4: 2 invaders, 2x
+  { 2, 250, 500, 5, 3 },   // Wave 5: 2 invaders, faster, 3x
+  { 3, 250, 400, 5, 3 },   // Wave 6: 3 invaders, 3x
+  { 3, 200, 350, 5, 4 },   // Wave 7: 3 invaders, fast, 4x
+  { 4, 200, 300, 0, 5 },   // Wave 8+: 4 invaders, endgame, 5x
 };
 #define NUM_WAVES 8
 ```
 
-**Memory:** ~32 bytes in flash (PROGMEM), 0 bytes RAM
+**Memory:** ~48 bytes in flash (PROGMEM), 0 bytes RAM
 
 ---
 
@@ -192,17 +300,20 @@ void checkCollisions() {
   if (!bulletActive) return;
 
   for (uint8_t i = 0; i < MAX_INVADERS; i++) {
-    if (invaders[i].active &&
-        bulletRow == invaders[i].row &&
-        bulletCol == invaders[i].col) {
+    if (invaderRows[i] != INVADER_INACTIVE &&
+        bulletRow == invaderRows[i] &&
+        bulletCol == invaderCols[i]) {
       // Hit!
-      invaders[i].active = false;
+      invaderRows[i] = INVADER_INACTIVE;
       bulletActive = false;
-      score++;
+      score += scoreMultiplier;  // Apply wave multiplier
       waveKills++;
 
+      // Flash hit effect
+      flashHit(invaderRows[i]);
+
       // Check wave advancement
-      if (waveKills >= currentWave.killsToAdvance) {
+      if (waveKills >= currentWaveKillsToAdvance) {
         advanceWave();
       }
       break;
@@ -211,14 +322,40 @@ void checkCollisions() {
 }
 ```
 
-### Game Over Check
+### Game Over Check (with Lives)
 ```cpp
-void checkGameOver() {
+void checkInvaderReachedBottom() {
   for (uint8_t i = 0; i < MAX_INVADERS; i++) {
-    if (invaders[i].active && invaders[i].row >= 7) {
-      gameOver();
+    if (invaderRows[i] != INVADER_INACTIVE && invaderRows[i] >= 7) {
+      // Invader reached bottom - lose a life
+      loseLife();
       return;
     }
+  }
+}
+
+void loseLife() {
+  lives--;
+
+  // Clear all invaders
+  for (uint8_t i = 0; i < MAX_INVADERS; i++) {
+    invaderRows[i] = INVADER_INACTIVE;
+  }
+
+  if (lives == 0) {
+    gameOver();
+  } else {
+    // Show remaining lives (flash N times)
+    for (uint8_t i = 0; i < lives; i++) {
+      for (uint8_t row = 0; row < 8; row++) matrix[row] = 0xFF;
+      updateDisplay();
+      delay(200);
+      for (uint8_t row = 0; row < 8; row++) matrix[row] = 0x00;
+      updateDisplay();
+      delay(200);
+    }
+    delay(500);
+    // Resume - invaders will spawn via normal spawn logic
   }
 }
 ```
@@ -229,10 +366,13 @@ void checkGameOver() {
 
 | Parameter | Description | Typical Range |
 |-----------|-------------|---------------|
-| `maxActiveInvaders` | Simultaneous invaders | 1-4 |
+| `MAX_INVADERS` | Max simultaneous invaders | 4 (constant) |
+| `STARTING_LIVES` | Lives at game start | 1-3 |
+| `maxActiveInvaders` | Invaders allowed this wave | 1-4 |
 | `dropInterval` | Gravity (lower = faster) | 150-400 ms |
-| `spawnInterval` | Time between spawns | 200-500 ms |
-| `killsToAdvance` | Kills per wave | 3-10 |
+| `spawnInterval` | Time between spawns | 200-600 ms |
+| `killsToAdvance` | Kills to next wave | 3-10 |
+| `scoreMultiplier` | Points per kill | 1-5x |
 
 ---
 
@@ -260,44 +400,49 @@ Before implementing, verify:
 ## Implementation Phases
 
 ### Phase 1: Multi-Invader Support
-- [ ] Add invaders array
+- [ ] Add invaderCols[4] and invaderRows[4] arrays
 - [ ] Update draw loop for multiple invaders
 - [ ] Update collision detection
-- [ ] Update game over check
+- [ ] Update game over check (basic, single life)
 - [ ] Test with hardcoded 2 invaders
 
-### Phase 2: Wave System
-- [ ] Add wave configuration table
+### Phase 2: Wave System + Lives
+- [ ] Add wave configuration table (PROGMEM)
 - [ ] Add spawn timer and logic
-- [ ] Add wave advancement
-- [ ] Test progression
+- [ ] Add wave advancement with flash effect
+- [ ] Add lives system (lose life, flash count, reset invaders)
+- [ ] Add score multiplier
+- [ ] Test progression through waves
 
-### Phase 3: Tuning
+### Phase 3: Tuning & Polish
 - [ ] Playtest and adjust wave table values
 - [ ] Balance difficulty curve
+- [ ] Tune spawn intervals for fun gameplay
 - [ ] Document final tuning values
+- [ ] Optional: High score to EEPROM
 
 ---
 
-## Questions for Review
+## Summary
 
-1. **Max invaders:** Is 4 enough for endgame chaos, or should we support more?
+All design decisions finalized:
 
-2. **Spawn behavior:** When a new wave adds invaders, should they:
-   - A) Spawn immediately (sudden difficulty spike)
-   - B) Spawn gradually via spawnInterval (smoother)
+| Feature | Status |
+|---------|--------|
+| Multi-invader (max 4) | Ready to implement |
+| Wave progression (8 waves) | Designed |
+| Lives system (3 lives) | Designed |
+| Score multiplier (1-5x) | Designed |
+| Wave flash effect | Designed |
+| Gradual spawning | Designed |
+| Endgame loop | Final wave repeats |
 
-3. **Wave looping:** At final wave, should it:
-   - A) Loop the last wave forever
-   - B) Keep incrementing speed infinitely
-   - C) "Victory" state after X waves
-
-4. **Visual feedback:** Flash or animation when advancing waves?
+**Hardware budget: ✓ All resources within limits**
 
 ---
 
-## Recommendation
+## Next Step
 
-Start with **Phase 1** - get multiple invaders working with hardcoded values. This validates the core mechanics before adding the wave system complexity.
+**Approve to begin Phase 1 implementation** - multi-invader support with basic mechanics.
 
-Estimated code size increase: ~200-300 bytes (well within ATtiny85's 8KB flash).
+Estimated code size increase: ~300-400 bytes (well within ATtiny85's 8KB flash).
