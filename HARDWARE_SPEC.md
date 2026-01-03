@@ -482,6 +482,195 @@ Side View:
 
 ---
 
+## Software Ecosystem
+
+### For Players: Game Flasher App
+
+A desktop/web app for non-technical users to swap games:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  🎮 Dot Platform Game Flasher                      [─]  │
+├─────────────────────────────────────────────────────────┤
+│                                                         │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐     │
+│  │ 👾          │  │ 🧱          │  │ 🐍          │     │
+│  │ Dot Invaders│  │ Dot Tetris  │  │ Dot Snake   │     │
+│  │             │  │             │  │             │     │
+│  │ [Install]   │  │ [Install]   │  │ [Install]   │     │
+│  └─────────────┘  └─────────────┘  └─────────────┘     │
+│                                                         │
+│  ⚙️ Game Settings (before flash):                       │
+│  ┌─────────────────────────────────────────────────┐   │
+│  │ Starting Lives:    [3 ▼]                        │   │
+│  │ Starting Level:    [1 ▼]                        │   │
+│  │ Button Swap:       [ ] Left/Right reversed      │   │
+│  │ Brightness:        [████████░░] 8/15            │   │
+│  │ Speed Preset:      (•) Normal ( ) Fast ( ) Slow │   │
+│  └─────────────────────────────────────────────────┘   │
+│                                                         │
+│  [🔌 Connect Device]  Status: Ready                     │
+│                                                         │
+└─────────────────────────────────────────────────────────┘
+```
+
+**Features:**
+- Game library browser (curated .hex files)
+- Pre-flash configuration (compile-time constants)
+- One-click install via Micronucleus
+- Auto-detect device connection
+- No Arduino/programming knowledge required
+
+**Implementation:**
+- Electron or Tauri desktop app
+- Uses `micronucleus` CLI under the hood
+- Config options modify game constants before compile
+- Or: pre-compiled variants for common configurations
+
+### For Hackers: Arduino Framework
+
+Full Arduino IDE support for custom game development:
+
+**Board Package Installation:**
+```
+Arduino IDE → Preferences → Additional Board URLs:
+https://dotplatform.github.io/package_dotplatform_index.json
+
+Tools → Board → Boards Manager → "Dot Platform"
+```
+
+**Board Settings:**
+| Setting | Value |
+|---------|-------|
+| Board | "Dot Platform (ATtiny85)" |
+| Clock | 8MHz (internal) or 16.5MHz (USB) |
+| Bootloader | Micronucleus |
+| Programmer | Micronucleus (USB) |
+
+### Game Development Framework
+
+A lightweight library for Dot Platform games:
+
+```cpp
+#include <DotPlatform.h>
+
+DotDisplay display;
+DotInput input;
+
+void setup() {
+  Dot.begin();           // Initialize hardware
+  display.clear();
+  display.show();
+}
+
+void loop() {
+  // Input handling
+  if (input.pressed(BTN_LEFT)) {
+    // Left button just pressed
+  }
+  if (input.held(BTN_RIGHT)) {
+    // Right button being held
+  }
+  if (input.chord()) {
+    // Both buttons pressed (fire!)
+  }
+
+  // Display
+  display.clear();
+  display.setPixel(x, y, ON);
+  display.drawSprite(x, y, spriteData);
+  display.show();
+
+  // Timing
+  Dot.waitFrame(60);     // 60 FPS frame limiter
+}
+```
+
+**Framework Features:**
+
+| Module | Functions |
+|--------|-----------|
+| `DotDisplay` | `clear()`, `setPixel()`, `drawSprite()`, `scrollText()`, `show()` |
+| `DotInput` | `pressed()`, `released()`, `held()`, `chord()`, `holdTime()` |
+| `DotAudio`* | `beep()`, `playTone()`, `playMelody()` |
+| `DotSave` | `save()`, `load()` (EEPROM high scores) |
+| `DotPower` | `sleep()`, `batteryLow()` |
+
+*If piezo speaker added
+
+### Configuration System
+
+Games can expose compile-time configuration:
+
+```cpp
+// game_config.h - User-modifiable settings
+#define STARTING_LIVES    3       // 1-9
+#define STARTING_LEVEL    1       // 1-8
+#define BUTTON_SWAP       false   // Swap left/right
+#define BRIGHTNESS        8       // 0-15
+#define INVADER_SPEED     400     // ms per drop (lower = faster)
+```
+
+**Flasher app integration:**
+1. App reads `game_config.h` comments for UI hints
+2. User adjusts sliders/dropdowns
+3. App modifies `#define` values
+4. Recompile with Arduino CLI
+5. Flash via Micronucleus
+
+### Fuse Configuration
+
+For advanced users - fuse settings via the flasher app:
+
+| Fuse | Default | Option | Effect |
+|------|---------|--------|--------|
+| Clock | 8MHz internal | 16MHz PLL | Faster but more power |
+| RSTDISBL | Disabled | Enable | Adds 3rd button, loses ISP |
+| BOD | 2.7V | Disabled | Lower power, less stable |
+| EESAVE | Clear | Preserve | Keep EEPROM on reflash |
+
+**Warning system in app:**
+```
+⚠️ Fuse Warning
+
+Enabling RSTDISBL will:
+• Add a third button (PB5)
+• DISABLE USB programming permanently
+• Require high-voltage programmer to recover
+
+Are you sure? [Yes, I understand] [Cancel]
+```
+
+### Game Repository
+
+Community game collection:
+
+```
+github.com/dotplatform/games/
+├── official/
+│   ├── dot-invaders/      # Space Invaders clone
+│   ├── dot-tetris/        # Tetris clone
+│   ├── dot-snake/         # Snake game
+│   └── dot-pong/          # Pong for 2 players
+├── community/
+│   ├── dot-breakout/      # Breakout clone
+│   ├── dot-asteroids/     # Asteroids
+│   ├── dot-frogger/       # Frogger
+│   └── ...
+└── templates/
+    ├── basic-game/        # Minimal game template
+    ├── scrolling-game/    # Side-scroller template
+    └── menu-system/       # Multi-game menu
+```
+
+**Submission guidelines:**
+- Must compile for ATtiny85 (≤6.5KB with bootloader)
+- Include `game_config.h` for user settings
+- MIT or similar open license
+- README with controls and gameplay
+
+---
+
 ## Development Phases
 
 ### Phase 1: Breadboard Prototype
