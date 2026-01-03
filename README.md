@@ -93,6 +93,24 @@ DotInvaders is a minimalist version of the classic Space Invaders arcade game, d
 - **Top 3 Rows**: Enemy formation (multiple LEDs)
 - **Moving Dot**: Your bullet when fired
 
+### Game Layout on 8x8 Matrix
+
+```
+Row 0:  👾 . 👾 . 👾 . 👾 .    (Enemy Row 1)
+Row 1:  👾 . 👾 . 👾 . 👾 .    (Enemy Row 2)
+Row 2:  👾 . 👾 . 👾 . 👾 .    (Enemy Row 3)
+Row 3:  . . . . . . . .        (Empty)
+Row 4:  . . . . . . . .        (Empty)
+Row 5:  . . . . * . . .        (Bullet)
+Row 6:  . . . . . . . .        (Empty)
+Row 7:  . . . 🚀 . . . .       (Your Ship)
+```
+
+Each LED represents:
+- 🚀 = Player ship (you)
+- 👾 = Enemy invader
+- * = Bullet (when fired)
+
 ## Game Features
 
 - ✨ Smooth enemy movement patterns
