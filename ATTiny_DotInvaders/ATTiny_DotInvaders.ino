@@ -1,3 +1,5 @@
+#include <avr/pgmspace.h>
+
 // MAX7219 Register Addresses
 #define MAX7219_REG_NOOP 0x00
 #define MAX7219_REG_DIGIT0 0x01
@@ -22,6 +24,23 @@ const uint8_t CS = 2;
 const uint8_t RIGHT_BUTTON = 3;
 const uint8_t LEFT_BUTTON = 4;
 
+// Game configuration
+#define STARTING_LIVES 3
+#define KILLS_PER_LEVEL 5
+#define NUM_SPEED_LEVELS 8
+
+// Speed levels (drop interval in ms) - stored in PROGMEM to save RAM
+const uint16_t speedLevels[] PROGMEM = {
+  400,  // Level 1: slow
+  350,  // Level 2
+  300,  // Level 3
+  260,  // Level 4
+  230,  // Level 5
+  200,  // Level 6
+  180,  // Level 7
+  160,  // Level 8+: max speed
+};
+
 // Game state
 byte matrix[8];
 uint8_t gunPos = 3;  // Gun position at bottom row (column 0-7)
@@ -31,7 +50,11 @@ bool bulletActive = false;
 uint8_t bulletCol = 0;
 uint8_t bulletRow = 0;
 uint16_t score = 0;
-uint8_t speed = 1;
+
+// Level progression
+uint8_t lives = STARTING_LIVES;
+uint8_t currentLevel = 1;
+uint8_t levelKills = 0;
 
 // Timing variables
 uint16_t invaderDropCounter = 0;
@@ -74,6 +97,63 @@ void updateDisplay() {
   }
 }
 
+// Get current drop interval based on level (reads from PROGMEM)
+uint16_t getDropInterval() {
+  uint8_t idx = currentLevel - 1;
+  if (idx >= NUM_SPEED_LEVELS) idx = NUM_SPEED_LEVELS - 1;
+  return pgm_read_word(&speedLevels[idx]);
+}
+
+// Level-up flash effect
+void flashLevelUp() {
+  for (uint8_t i = 0; i < 3; i++) {
+    for (uint8_t row = 0; row < 8; row++) {
+      sendCmd(row + 1, 0xFF);
+    }
+    delay(50);
+    for (uint8_t row = 0; row < 8; row++) {
+      sendCmd(row + 1, 0x00);
+    }
+    delay(50);
+  }
+}
+
+// Show remaining lives (flash N times)
+void showLivesRemaining() {
+  for (uint8_t i = 0; i < lives; i++) {
+    for (uint8_t row = 0; row < 8; row++) matrix[row] = 0xFF;
+    updateDisplay();
+    delay(200);
+    for (uint8_t row = 0; row < 8; row++) matrix[row] = 0x00;
+    updateDisplay();
+    delay(200);
+  }
+  delay(300);
+}
+
+// Forward declaration
+void gameOver();
+
+// Lose a life - returns true if game continues, false if game over
+bool loseLife() {
+  lives--;
+
+  if (lives == 0) {
+    gameOver();
+    return false;
+  }
+
+  // Show remaining lives
+  showLivesRemaining();
+
+  // Reset invader position
+  invaderCol = random(0, 8);
+  invaderRow = 0;
+  invaderDropCounter = 0;
+
+  return true;
+}
+
 // Initialize MAX7219
 void setup() {
   pinMode(DIN, OUTPUT);
@@ -93,10 +173,12 @@ void setup() {
   for (uint8_t i = 0; i < 8; i++) matrix[i] = 0;
   updateDisplay();
 
-  // Initialize random seed using millis() for better randomness
-  // The unpredictable power-on time provides entropy
-  randomSeed(millis());
-  
+  // Initialize random seed - combine sources for better entropy
+  randomSeed(analogRead(A0) ^ millis());
+
+  // Show starting lives
+  showLivesRemaining();
+
   // Spawn first invader
   spawnInvader();
 }
@@ -109,7 +191,7 @@ void spawnInvader() {
 
 // Main game loop
 void loop() {
-  uint16_t invaderDropInterval = 300 - (speed * 10);  // Gets faster with score
+  uint16_t invaderDropInterval = getDropInterval();  // Level-based speed
   uint16_t bulletMoveInterval = 30;  // Fast bullet movement
   
   // Clear matrix for fresh frame
@@ -238,12 +320,11 @@ void loop() {
   
   // Check for collision (bullet hits invader)
   if (bulletActive && bulletRow == invaderRow && bulletCol == invaderCol) {
-    // Hit!
+    // Hit! Apply score multiplier (level = multiplier)
     bulletActive = false;
-    score++;
-    speed++;
-    if (speed > 20) speed = 20;
-    
+    score += currentLevel;
+    levelKills++;
+
     // Flash the hit
     for (uint8_t i = 0; i < 3; i++) {
       sendCmd(invaderRow + 1, 0xFF);
@@ -251,48 +332,58 @@ void loop() {
       sendCmd(invaderRow + 1, 0x00);
       delay(50);
     }
-    
+
+    // Check for level up
+    if (levelKills >= KILLS_PER_LEVEL && currentLevel < NUM_SPEED_LEVELS) {
+      currentLevel++;
+      levelKills = 0;
+      flashLevelUp();
+    }
+
     // Spawn new invader
     spawnInvader();
     invaderDropCounter = 0;
   }
-  
-  // Check if invader reached the bottom (game over)
+
+  // Check if invader reached the bottom (lose a life)
   if (invaderRow >= 7) {
-    gameOver();
-    return;
+    if (!loseLife()) {
+      return;  // Game over was triggered
+    }
   }
 }
 
 // Game over sequence
 void gameOver() {
-  // Flash entire display
-  for (uint8_t i = 0; i < 8; i++) matrix[i] = 0xFF;
-  updateDisplay();
-  delay(200);
-  for (uint8_t i = 0; i < 8; i++) matrix[i] = 0x00;
-  updateDisplay();
-  delay(200);
-  for (uint8_t i = 0; i < 8; i++) matrix[i] = 0xFF;
-  updateDisplay();
-  delay(200);
-  for (uint8_t i = 0; i < 8; i++) matrix[i] = 0x00;
-  updateDisplay();
-  
-  // Display score pattern (simplified - number of rows lit = score)
-  uint8_t scoreDisplay = score;
-  if (scoreDisplay > 8) scoreDisplay = 8;
-  for (uint8_t i = 0; i < scoreDisplay; i++) {
-    matrix[7 - i] = 0xFF;
+  // Flash entire display (game over effect)
+  for (uint8_t flash = 0; flash < 4; flash++) {
+    for (uint8_t i = 0; i < 8; i++) matrix[i] = 0xFF;
+    updateDisplay();
+    delay(150);
+    for (uint8_t i = 0; i < 8; i++) matrix[i] = 0x00;
+    updateDisplay();
+    delay(150);
+  }
+
+  // Display final level reached (columns lit = level)
+  for (uint8_t i = 0; i < 8; i++) matrix[i] = 0;
+  uint8_t levelDisplay = currentLevel;
+  if (levelDisplay > 8) levelDisplay = 8;
+  for (uint8_t i = 0; i < levelDisplay; i++) {
+    for (uint8_t row = 0; row < 8; row++) {
+      matrix[row] |= (1 << i);
+    }
   }
   updateDisplay();
   delay(2000);
-  
-  // Reset game
+
+  // Reset game state
   for (uint8_t i = 0; i < 8; i++) matrix[i] = 0;
   updateDisplay();
   score = 0;
-  speed = 1;
+  lives = STARTING_LIVES;
+  currentLevel = 1;
+  levelKills = 0;
   gunPos = 3;
   bulletActive = false;
   invaderDropCounter = 0;
@@ -300,6 +391,8 @@ void gameOver() {
   keyHoldTimer = 0;
   lastButtonState = 0;
   preFireButtonState = 0;
+
+  // Show lives and start new game
+  showLivesRemaining();
   spawnInvader();
-  delay(500);
 }
