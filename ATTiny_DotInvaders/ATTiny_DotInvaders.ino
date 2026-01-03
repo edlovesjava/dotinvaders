@@ -82,8 +82,9 @@ void setup() {
   for (uint8_t i = 0; i < 8; i++) matrix[i] = 0;
   updateDisplay();
 
-  // Initialize random seed
-  randomSeed(analogRead(3));
+  // Initialize random seed using millis() for better randomness
+  // The unpredictable power-on time provides entropy
+  randomSeed(millis());
   
   // Spawn first invader
   spawnInvader();
@@ -158,12 +159,6 @@ void loop() {
   if (invaderDropCounter >= invaderDropInterval) {
     invaderDropCounter = 0;
     invaderRow++;
-    
-    // Check if invader reached the bottom (game over)
-    if (invaderRow >= 7) {
-      gameOver();
-      return;
-    }
   }
   
   // Move bullet up
@@ -200,6 +195,12 @@ void loop() {
     // Spawn new invader
     spawnInvader();
     invaderDropCounter = 0;
+  }
+  
+  // Check if invader reached the bottom (game over)
+  if (invaderRow >= 7) {
+    gameOver();
+    return;
   }
 }
 

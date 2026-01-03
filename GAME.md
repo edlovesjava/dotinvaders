@@ -159,7 +159,7 @@ Users can modify these parameters in the code to adjust gameplay:
 // Line 100: Invader drop speed formula
 uint16_t invaderDropInterval = 300 - (speed * 10);
 
-// Line 190: Max speed cap
+// Line 184: Max speed cap
 if (speed > 20) speed = 20;
 ```
 
@@ -168,7 +168,7 @@ if (speed > 20) speed = 20;
 // Line 78: Display brightness (0x00 to 0x0F)
 sendCmd(MAX7219_REG_INTENSITY, 0x08);
 
-// Lines 193-198: Hit flash effect duration
+// Lines 189-196: Hit flash effect duration
 delay(50);  // Time between flashes
 ```
 
