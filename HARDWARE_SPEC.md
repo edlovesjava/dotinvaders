@@ -8,6 +8,22 @@ Ultra-low-power retro handheld game platform featuring:
 - Battery or USB powered
 - In-circuit USB programming
 - 3D printable enclosure
+- **Hackable/modular design for geeks**
+
+---
+
+## Design Philosophy: Hackability First
+
+This is a **geek machine** - designed for tinkering, modding, and learning.
+
+| Principle | Implementation |
+|-----------|----------------|
+| Socketed MCU | DIP-8 socket for easy chip swap/upgrade |
+| Modular display | Header pins for MAX7219 + matrix removal |
+| Swappable battery | 2xAAA clip OR LiPo holder (same footprint) |
+| Customizable buttons | Replaceable button caps (3D printed) |
+| Exposed pads | Breakout pads for unused pins |
+| Open source | All design files public (KiCad, STL) |
 
 ---
 
@@ -89,6 +105,122 @@ Current Assignment:
 - Travel: 0.25mm typical
 - Force: 160-260gf
 - Debounce: Software (handled in code)
+
+---
+
+## Modular/Hackable Components
+
+### MCU Socket (DIP-8)
+
+```
+┌─────────────────────────┐
+│  DIP-8 Socket           │
+│  ┌───────────────────┐  │
+│  │ ○ ○ ○ ○   ○ ○ ○ ○ │  │  <- Machined pins
+│  └───────────────────┘  │
+│                         │
+│  ATtiny85 drops in      │
+└─────────────────────────┘
+```
+
+**Benefits:**
+- Swap MCU without soldering (upgrade to ATtiny85V, ATtiny84, etc.)
+- Easy chip replacement if damaged
+- Program chips externally before insertion
+- Educational: see the actual chip
+
+**Socket type:** Machined-pin DIP-8 (gold contacts, low insertion force)
+
+### Display Module (Header-Connected)
+
+```
+Main PCB                    Display Module
+┌──────────┐               ┌──────────────┐
+│          │               │   8x8 LED    │
+│  ○ ○ ○ ○ ├───────────────┤   Matrix     │
+│  VCC     │  5-pin header │              │
+│  GND     │               │   MAX7219    │
+│  DIN     │               │   (on back)  │
+│  CLK     │               │              │
+│  CS      │               └──────────────┘
+└──────────┘
+
+Header: 2.54mm pitch, 5-pin female on main PCB
+        5-pin male on display module
+```
+
+**Benefits:**
+- Swap display colors (red, green, blue, white matrix)
+- Upgrade to different matrix sizes (with code change)
+- Replace if LEDs burn out
+- Test different LED brightness/styles
+
+### Swappable Battery System
+
+**Design:** Same PCB footprint for both options
+
+```
+Option A: 2xAAA Holder          Option B: LiPo + Charger
+┌─────────────────────┐         ┌─────────────────────┐
+│  [AAA]    [AAA]     │         │  [LiPo 3.7V]        │
+│   (+)      (-)      │         │  [TP4056 charger]   │
+│    └────┬───┘       │         │       └──┬──┘       │
+│         │           │         │          │          │
+│    3V nominal       │         │    3.7-4.2V         │
+│    (needs boost)    │         │    (needs boost)    │
+└─────────────────────┘         └─────────────────────┘
+          │                               │
+          └───────────┬───────────────────┘
+                      ▼
+              [Boost to 5V]
+              (shared circuit)
+```
+
+**Compatibility:**
+- Same boost converter footprint
+- Same power switch location
+- AAA holder and LiPo holder have matching mounting holes
+- User swaps by replacing battery holder + optionally adding TP4056
+
+### Customizable Button Caps
+
+```
+3D Printed Button Caps (various styles):
+
+  Standard    Concave     Raised      D-Pad
+   ┌───┐      ╭───╮      ┌─▲─┐      ┌─────┐
+   │   │      │ ╰ │      │   │      │  ▲  │
+   └───┘      ╰───╯      └───┘      │◄ ● ►│
+                                    │  ▼  │
+                                    └─────┘
+```
+
+**Cap specs:**
+- 6mm diameter base (fits standard tactile switch)
+- Friction fit or snap-on
+- STL files provided for customization
+- Print in different colors
+
+### Expansion Pads
+
+```
+PCB Edge Breakout:
+┌──────────────────────────────────────┐
+│  Main Circuit                        │
+│                          ○ VCC       │
+│                          ○ GND       │
+│                          ○ PB5/RST   │
+│                          ○ SPARE1    │
+│                          ○ SPARE2    │
+└──────────────────────────────────────┘
+```
+
+**For hackers:**
+- Add external sensors (light, temp, tilt)
+- Add piezo speaker (1 pin)
+- Add vibration motor
+- Chain additional LED matrices
+- Connect to external programmer
 
 ---
 
