@@ -90,21 +90,42 @@ Current Assignment:
 - At intensity 2: ~30mA with all LEDs on
 - Typical gameplay: ~20-50mA
 
-### Buttons
+### Buttons (2 Pins → 3 Inputs)
 
-| Button | Function | Pin |
-|--------|----------|-----|
-| LEFT | Move left / Fire (chord) | PB4 |
-| RIGHT | Move right / Fire (chord) | PB3 |
-| RESET* | Reset / Third button | PB5 |
+Only **2 physical buttons** using **2 GPIO pins**, but providing **3 logical inputs** via chord detection:
 
-*Optional: PB5 can be used as third button if RSTDISBL fuse is programmed (loses ISP capability, requires HV programming)
+| Physical | Pin | Logical Inputs |
+|----------|-----|----------------|
+| LEFT button | PB4 | Left action (tap/hold) |
+| RIGHT button | PB3 | Right action (tap/hold) |
+| *Both pressed* | — | Third action (chord) |
+
+**Input Matrix:**
+```
+             LEFT released    LEFT pressed
+            ┌────────────────┬────────────────┐
+RIGHT       │                │                │
+released    │    (idle)      │  LEFT action   │
+            │                │                │
+            ├────────────────┼────────────────┤
+RIGHT       │                │                │
+pressed     │  RIGHT action  │  CHORD action  │
+            │                │                │
+            └────────────────┴────────────────┘
+```
+
+**Advantages:**
+- PB5/RESET pin preserved for USB bootloader programming
+- No fuse changes required
+- Full ISP capability retained
+- Simple 2-button hardware, 3-action gameplay
 
 **Button Specs:**
 - Type: Tactile momentary switch
 - Travel: 0.25mm typical
 - Force: 160-260gf
 - Debounce: Software (handled in code)
+- Chord detection: Movement on release, fire on both-pressed
 
 ---
 
@@ -853,21 +874,10 @@ For advanced users - fuse settings via the flasher app:
 | Fuse | Default | Option | Effect |
 |------|---------|--------|--------|
 | Clock | 8MHz internal | 16MHz PLL | Faster but more power |
-| RSTDISBL | Disabled | Enable | Adds 3rd button, loses ISP |
 | BOD | 2.7V | Disabled | Lower power, less stable |
 | EESAVE | Clear | Preserve | Keep EEPROM on reflash |
 
-**Warning system in app:**
-```
-⚠️ Fuse Warning
-
-Enabling RSTDISBL will:
-• Add a third button (PB5)
-• DISABLE USB programming permanently
-• Require high-voltage programmer to recover
-
-Are you sure? [Yes, I understand] [Cancel]
-```
+**Note on RSTDISBL:** Not recommended. Since chord detection provides a third input, there's no need to sacrifice PB5/RESET. Enabling RSTDISBL would disable USB programming permanently and require a high-voltage programmer to recover. Only for advanced hackers who need a true 4th physical input.
 
 ### Game Repository
 
@@ -929,7 +939,7 @@ github.com/dotplatform/games/
 
 ## Open Questions
 
-1. **Third button?** Use PB5 (loses ISP) or add shift register?
+1. ~~**Third button?**~~ **RESOLVED:** Chord detection (both buttons pressed) provides 3rd input using only 2 pins. No need to sacrifice PB5/RESET.
 2. **Battery type?** 2xAAA, CR2032 coin cell, or LiPo?
 3. **USB connector?** Micro-USB, USB-C, or bare pads?
 4. **Speaker?** Add piezo for audio feedback? (uses 1 pin)
