@@ -356,6 +356,234 @@ USB Connector:
 
 ---
 
+## Power Supply Circuit (Boost Converter)
+
+When running from batteries (2xAAA = 3V, or LiPo = 3.7V), a boost converter steps up to 5V:
+
+### Boost Converter Schematic
+
+```
+                         TPS61220 / MCP1640
+                        ┌──────────────────┐
+                        │                  │
+  BAT+ (2.5-4.2V) ──────┤VIN          VOUT├──────┬──── +5V VCC
+                        │                  │      │
+                   ┌────┤EN               │     ┌┴┐
+                   │    │                  │     │ │ 10µF
+             ON/OFF│    │            FB ───┤     └┬┘
+              ↓    │    │                  │      │
+           [SWITCH]│    │             GND──┤──────┴──── GND
+                   │    │                  │
+                   └────┤               SW├────┐
+                        └──────────────────┘    │
+                                                │
+                                           ┌────┴────┐
+                                           │   L1    │  4.7µH
+                                           │  ════   │  inductor
+                                           └────┬────┘
+                                                │
+                                                └──── VOUT
+
+Component values (TPS61220):
+  L1: 4.7µH inductor (shielded, low DCR)
+  C_IN: 10µF ceramic
+  C_OUT: 10µF ceramic
+  R_FB1: 1MΩ (sets 5V output)
+  R_FB2: 324kΩ
+```
+
+### Power Path with USB + Battery
+
+```
+                    USB 5V
+                      │
+                     ─┴─
+                     \ /  D1 (Schottky)
+                      V   BAT54
+                      │
+                      ├─────────────────────────────── VCC (+5V)
+                      │                                  │
+                      │    ┌────────────┐               │
+  BAT+ ───[SWITCH]────┼────┤ TPS61220   ├───────────────┤
+                      │    │  BOOST     │               │
+                      │    └────────────┘               │
+                      │                                  │
+                      │         ┌─────────────────────┐ │
+                      │         │                     │ │
+                      ├─────────┤ ATtiny85   MAX7219  ├─┘
+                      │         │                     │
+                     GND        └─────────────────────┘
+
+Power priority:
+  1. USB connected → USB powers device (diode blocks battery)
+  2. USB disconnected → Battery boost powers device
+  3. ON/OFF switch controls battery path only
+```
+
+### PCB Placement
+
+```
+┌─────────────────────────────────────────────┐
+│  ┌───────────────────────────────────────┐  │
+│  │           8x8 LED MATRIX              │  │
+│  └───────────────────────────────────────┘  │
+│                                             │
+│  [USB]  [ATtiny85]  [MAX7219]  ┌────────┐  │
+│                                │ BOOST  │  │
+│                                │ L1 ▣   │  │
+│    [LEFT]        [RIGHT]       └────────┘  │
+│                                             │
+│  [PWR SW]        [BAT+ BAT-]               │
+└─────────────────────────────────────────────┘
+
+Boost section: Bottom-right corner
+  - Keep inductor away from display (EMI)
+  - Short traces: VIN → L1 → SW → VOUT
+  - Ground plane under boost section
+```
+
+---
+
+## Expansion Port (Smart Cartridge System)
+
+For hackers who want to chain displays or add expansion modules:
+
+### Expansion Header
+
+```
+Main PCB Edge Connector (active active active active active active active active active 8-pin):
+
+    ┌─────────────────────────────────────────┐
+    │  Main PCB                               │
+    │                                         │
+    │  ○ ○ ○ ○ ○ ○ ○ ○   <- 2.54mm header    │
+    │  1 2 3 4 5 6 7 8                        │
+    └──┬─┬─┬─┬─┬─┬─┬─┬────────────────────────┘
+       │ │ │ │ │ │ │ │
+       │ │ │ │ │ │ │ └── 8: GND
+       │ │ │ │ │ │ └──── 7: VCC (+5V)
+       │ │ │ │ │ └────── 6: DOUT (MAX7219 data out)
+       │ │ │ │ └──────── 5: CLK (directly from PB1)
+       │ │ │ └────────── 4: CS2 (directly from PB2)
+       │ │ └──────────── 3: PB5/RST (optional I/O)
+       │ └────────────── 2: PB3 (directly from button input)
+       └──────────────── 1: PB4 (directly from button input)
+```
+
+### Chaining MAX7219 Displays
+
+The MAX7219 has DOUT for daisy-chaining multiple matrices:
+
+```
+Main Unit                    Expansion Cartridge
+┌──────────────┐            ┌──────────────────────┐
+│   8x8 LED    │            │   8x8 LED   8x8 LED  │
+│   ┌─────┐    │            │   ┌─────┐   ┌─────┐  │
+│   │     │    │            │   │     │   │     │  │
+│   └──┬──┘    │            │   └──┬──┘   └──┬──┘  │
+│   ┌──┴──┐    │            │   ┌──┴──┐   ┌──┴──┐  │
+│   │MAX  │    │  8-pin     │   │MAX  │───│MAX  │  │
+│   │7219 ├────┼──cable────►│───│7219 │   │7219 │  │
+│   │#1   │    │            │   │#2   │   │#3   │  │
+│   │DOUT─┼────┼───────────►├───│DIN  │   │DIN  │  │
+│   └─────┘    │            │   └─────┘   └─────┘  │
+└──────────────┘            └──────────────────────┘
+
+Software addressing:
+  - Send 3 commands per frame (one per chip)
+  - First command goes to chip #3 (farthest)
+  - Last command goes to chip #1 (nearest)
+  - CS pulses latch all chips simultaneously
+```
+
+### Smart Cartridge Concept
+
+Expansion cartridge with its own microcontroller:
+
+```
+┌──────────────────────────────────────────────────────┐
+│  SMART CARTRIDGE                                     │
+│  ┌─────────────────────────────────────────────────┐ │
+│  │                                                 │ │
+│  │   ┌───────────┐    ┌───────────┐               │ │
+│  │   │  Extra    │    │   Extra   │               │ │
+│  │   │  8x8 LED  │    │   8x8 LED │               │ │
+│  │   └─────┬─────┘    └─────┬─────┘               │ │
+│  │         │                │                      │ │
+│  │      ┌──┴──┐          ┌──┴──┐     ┌─────────┐  │ │
+│  │      │MAX  │──────────│MAX  │     │ATtiny85 │  │ │
+│  │      │7219 │          │7219 │     │ "CO-    │  │ │
+│  │      │     │          │     │     │PROCESSOR│  │ │
+│  │      └─────┘          └─────┘     └────┬────┘  │ │
+│  │                                        │       │ │
+│  └────────────────────────────────────────┼───────┘ │
+│                                           │         │
+│     ════════════════════════════════════════        │
+│              8-pin edge connector                   │
+└─────────────────────────────────────────────────────┘
+
+Communication:
+  - Coprocessor ATtiny85 listens on shared bus
+  - Main unit sends commands via CLK/DIN
+  - Cartridge MCU can add game logic, sound, sensors
+```
+
+### Expansion Ideas
+
+| Cartridge Type | Components | Use Case |
+|----------------|------------|----------|
+| **Display Expander** | 2x MAX7219 + matrices | 24x8 or 16x8 display |
+| **Sound Cartridge** | ATtiny85 + piezo/speaker | Music, sound effects |
+| **Motion Cartridge** | MPU6050 accelerometer | Tilt controls |
+| **Memory Cartridge** | 24LC256 EEPROM | Save games, high scores |
+| **Link Cartridge** | nRF24L01 radio | Multiplayer wireless |
+| **Debug Cartridge** | FTDI USB-serial | Serial debugging |
+
+### Cartridge Detection
+
+```cpp
+// On startup, main unit checks for cartridge:
+void detectCartridge() {
+  // Send discovery command on expansion bus
+  // Cartridge responds with ID byte
+
+  // ID 0x00 = No cartridge / dumb display chain
+  // ID 0x01 = Display expander (report chain length)
+  // ID 0x02 = Sound cartridge
+  // ID 0x03 = Motion cartridge
+  // ...
+}
+```
+
+### Physical Cartridge Design
+
+```
+Side View:
+                    ┌─────────────────┐
+                    │   CARTRIDGE     │
+                    │   ┌─────────┐   │
+                    │   │ 8x8 LED │   │
+                    │   └─────────┘   │
+                    │                 │
+                    │   [CIRCUITRY]   │
+                    │                 │
+                    └────────┬────────┘
+                             │  Edge connector
+    ┌────────────────────────┼────────────────────────┐
+    │                   ═════╧═════                   │
+    │                  MAIN UNIT                      │
+    │              (cartridge slot)                   │
+    └─────────────────────────────────────────────────┘
+
+Mechanical:
+  - 8-pin 2.54mm pitch edge connector
+  - Friction fit or latching
+  - Cartridge extends above main unit
+  - 3D printable cartridge shells
+```
+
+---
+
 ## PCB Design
 
 ### Board Specifications
