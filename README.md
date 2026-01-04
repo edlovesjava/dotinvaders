@@ -2,6 +2,8 @@
 
 A Space Invaders clone for the [DOTplatform](https://github.com/edlovesjava/DOTplatform) handheld gaming system.
 
+[![Video Demo](https://img.youtube.com/vi/wMLzsOIjB80/0.jpg)](https://youtube.com/shorts/wMLzsOIjB80)
+
 ## Game Description
 
 Dot Invaders is a minimalist space shooter game where:
