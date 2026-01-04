@@ -25,7 +25,7 @@ const uint8_t LEFT_BUTTON = 4;
 
 // Speed levels (drop interval in ms) - stored in PROGMEM
 const uint16_t speedLevels[] PROGMEM = {
-  400, 350, 300, 260, 230, 200, 180, 160
+  320, 280, 240, 210, 185, 160, 145, 130
 };
 
 // Wave configuration (invaders per wave) - stored in PROGMEM
@@ -71,7 +71,7 @@ bool lastFireState = false;
 // Key repeat
 uint16_t keyHoldTimer = 0;
 uint8_t heldButton = 0;
-const uint16_t KEY_REPEAT_DELAY = 250;
+const uint16_t KEY_REPEAT_DELAY = 125;
 const uint16_t KEY_REPEAT_RATE = 50;
 
 // Button state
